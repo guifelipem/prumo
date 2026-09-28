@@ -91,13 +91,21 @@ if ($nextAccounts.Count -ne 1 -or $nextAccounts[0].id -ne $secondAccount.id) {
 }
 Invoke-Check -Method Get -Uri "$accounts/accounts?size=0" -ExpectedStatus 400 -Token $session.accessToken | Out-Null
 
+$category = Invoke-Check -Method Post -Uri "$transactions/categories" -ExpectedStatus 201 -Token $session.accessToken -Payload @{ name = 'Alimentação'; type = 'EXPENSE' }
+if (-not $category.id -or $category.ownerId -ne $user.id) { throw 'Categoria criada com proprietário inesperado.' }
+$ownedCategories = @(Invoke-Check -Method Get -Uri "$transactions/categories" -ExpectedStatus 200 -Token $session.accessToken)
+if ($ownedCategories.Count -ne 1 -or $ownedCategories[0].id -ne $category.id) { throw 'Listagem de categorias inesperada.' }
+$category = Invoke-Check -Method Put -Uri "$transactions/categories/$($category.id)" -ExpectedStatus 200 -Token $session.accessToken -Payload @{ name = 'Mercado'; type = 'EXPENSE' }
+
 $entry = Invoke-Check -Method Post -Uri "$transactions/transactions" -ExpectedStatus 201 -Token $session.accessToken -Payload @{
     accountId = $account.id
     type = 'EXPENSE'
     amount = 25.50
     description = 'Teste de integração'
+    occurredAt = '2024-05-03T12:30:00Z'
+    categoryId = $category.id
 }
-if (-not $entry.id -or $entry.accountId -ne $account.id -or $entry.type -ne 'EXPENSE') {
+if (-not $entry.id -or $entry.accountId -ne $account.id -or $entry.type -ne 'EXPENSE' -or $entry.categoryId -ne $category.id -or $entry.occurredAt -ne '2024-05-03T12:30:00Z') {
     throw 'Lançamento criado com dados inesperados.'
 }
 $secondEntry = Invoke-Check -Method Post -Uri "$transactions/transactions" -ExpectedStatus 201 -Token $session.accessToken -Payload @{
@@ -115,6 +123,34 @@ if ($nextEntries.Count -ne 1 -or $nextEntries[0].id -ne $entry.id) {
     throw 'Paginação de lançamentos inesperada.'
 }
 Invoke-Check -Method Get -Uri "$transactions/transactions?accountId=$($account.id)&size=0" -ExpectedStatus 400 -Token $session.accessToken | Out-Null
+$balance = Invoke-Check -Method Get -Uri "$transactions/transactions/balance?accountId=$($account.id)" -ExpectedStatus 200 -Token $session.accessToken
+if ($balance.accountId -ne $account.id -or [decimal]$balance.balance -ne -15.50) {
+    throw 'Saldo da conta inesperado.'
+}
+$emptyBalance = Invoke-Check -Method Get -Uri "$transactions/transactions/balance?accountId=$($secondAccount.id)" -ExpectedStatus 200 -Token $session.accessToken
+if ([decimal]$emptyBalance.balance -ne 0) { throw 'Saldo de conta sem lançamentos inesperado.' }
+Invoke-Check -Method Delete -Uri "$transactions/categories/$($category.id)" -ExpectedStatus 409 -Token $session.accessToken | Out-Null
+$updatedEntry = Invoke-Check -Method Put -Uri "$transactions/transactions/$($secondEntry.id)" -ExpectedStatus 200 -Token $session.accessToken -Payload @{
+    type = 'INCOME'
+    amount = 40.00
+    description = 'Entrada corrigida'
+    occurredAt = '2024-06-01T12:30:00Z'
+}
+if ($updatedEntry.accountId -ne $account.id -or $updatedEntry.createdAt -ne $secondEntry.createdAt -or $updatedEntry.occurredAt -ne '2024-06-01T12:30:00Z') {
+    throw 'Edição alterou conta ou data de criação.'
+}
+$updatedBalance = Invoke-Check -Method Get -Uri "$transactions/transactions/balance?accountId=$($account.id)" -ExpectedStatus 200 -Token $session.accessToken
+if ([decimal]$updatedBalance.balance -ne 14.50) { throw 'Saldo não refletiu edição.' }
+Invoke-Check -Method Put -Uri "$transactions/transactions/$($secondEntry.id)" -ExpectedStatus 400 -Token $session.accessToken -Payload @{
+    type = 'INCOME'
+    amount = 0
+    description = 'Valor inválido'
+    occurredAt = '2024-06-01T12:30:00Z'
+} | Out-Null
+Invoke-Check -Method Delete -Uri "$transactions/transactions/$($entry.id)" -ExpectedStatus 204 -Token $session.accessToken | Out-Null
+$balanceAfterDelete = Invoke-Check -Method Get -Uri "$transactions/transactions/balance?accountId=$($account.id)" -ExpectedStatus 200 -Token $session.accessToken
+if ([decimal]$balanceAfterDelete.balance -ne 40.00) { throw 'Saldo não refletiu exclusão.' }
+Invoke-Check -Method Delete -Uri "$transactions/transactions/$($entry.id)" -ExpectedStatus 404 -Token $session.accessToken | Out-Null
 
 $otherEmail = "smoke+other-$suffix@prumo.test"
 Invoke-Check -Method Post -Uri "$auth/users" -ExpectedStatus 201 -Payload @{
@@ -128,12 +164,41 @@ $otherSession = Invoke-Check -Method Post -Uri "$auth/sessions" -ExpectedStatus 
 Invoke-Check -Method Get -Uri "$accounts/accounts/$($account.id)" -ExpectedStatus 404 -Token $otherSession.accessToken | Out-Null
 $otherAccounts = @(Invoke-Check -Method Get -Uri "$accounts/accounts" -ExpectedStatus 200 -Token $otherSession.accessToken)
 if ($otherAccounts.Count -ne 0) { throw 'Listagem de contas expôs dados de outro usuário.' }
+$otherCategories = @(Invoke-Check -Method Get -Uri "$transactions/categories" -ExpectedStatus 200 -Token $otherSession.accessToken)
+if ($otherCategories.Count -ne 0) { throw 'Listagem de categorias expôs dados de outro usuário.' }
+Invoke-Check -Method Put -Uri "$transactions/categories/$($category.id)" -ExpectedStatus 404 -Token $otherSession.accessToken -Payload @{ name = 'Alterada'; type = 'BOTH' } | Out-Null
+Invoke-Check -Method Delete -Uri "$transactions/categories/$($category.id)" -ExpectedStatus 404 -Token $otherSession.accessToken | Out-Null
+Invoke-Check -Method Put -Uri "$transactions/transactions/$($secondEntry.id)" -ExpectedStatus 404 -Token $otherSession.accessToken -Payload @{
+    type = 'EXPENSE'
+    amount = 1.00
+    description = 'Acesso negado'
+    occurredAt = '2024-06-01T12:30:00Z'
+} | Out-Null
+Invoke-Check -Method Delete -Uri "$transactions/transactions/$($secondEntry.id)" -ExpectedStatus 404 -Token $otherSession.accessToken | Out-Null
 Invoke-Check -Method Get -Uri "$transactions/transactions?accountId=$($account.id)" -ExpectedStatus 404 -Token $otherSession.accessToken | Out-Null
+Invoke-Check -Method Get -Uri "$transactions/transactions/balance?accountId=$($account.id)" -ExpectedStatus 404 -Token $otherSession.accessToken | Out-Null
 Invoke-Check -Method Post -Uri "$transactions/transactions" -ExpectedStatus 404 -Token $otherSession.accessToken -Payload @{
     accountId = $account.id
     type = 'EXPENSE'
     amount = 1.00
     description = 'Acesso negado'
 } | Out-Null
+
+$otherAccount = Invoke-Check -Method Post -Uri "$accounts/accounts" -ExpectedStatus 201 -Token $otherSession.accessToken -Payload @{ name = 'Outra conta'; currency = 'BRL' }
+Invoke-Check -Method Post -Uri "$transactions/transactions" -ExpectedStatus 404 -Token $otherSession.accessToken -Payload @{
+    accountId = $otherAccount.id
+    type = 'EXPENSE'
+    amount = 1.00
+    description = 'Categoria alheia'
+    categoryId = $category.id
+} | Out-Null
+Invoke-Check -Method Put -Uri "$transactions/transactions/$($secondEntry.id)" -ExpectedStatus 404 -Token $session.accessToken -Payload @{
+    type = 'INCOME'
+    amount = 40.00
+    description = 'Categoria incompatível'
+    occurredAt = '2024-06-01T12:30:00Z'
+    categoryId = $category.id
+} | Out-Null
+Invoke-Check -Method Delete -Uri "$transactions/categories/$($category.id)" -ExpectedStatus 204 -Token $session.accessToken | Out-Null
 
 Write-Output 'Fluxo completo, listagens e isolamento entre usuários: OK.'

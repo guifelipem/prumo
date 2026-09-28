@@ -5,5 +5,6 @@ import java.time.Instant;
 import java.util.UUID;
 
 public record Transaction(UUID id, UUID accountId, TransactionType type,
-                          BigDecimal amount, String description, Instant occurredAt) {
+                          BigDecimal amount, String description, Instant occurredAt, UUID categoryId,
+                          Instant createdAt) {
 }
