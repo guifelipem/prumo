@@ -1,4 +1,74 @@
 services:
+  auth-service:
+    build: ./auth-service
+    environment:
+      DB_HOST: auth-db
+      DB_PORT: 5432
+      DB_NAME: prumo_auth
+      DB_USERNAME: prumo_auth
+      DB_PASSWORD: ${AUTH_DB_PASSWORD:?Defina AUTH_DB_PASSWORD no arquivo .env}
+      INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:?Defina INTERNAL_SERVICE_KEY no arquivo .env}
+    ports:
+      - "127.0.0.1:8081:8081"
+    depends_on:
+      auth-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8081/actuator/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 30s
+
+  account-service:
+    build: ./account-service
+    environment:
+      DB_HOST: account-db
+      DB_PORT: 5432
+      DB_NAME: prumo_account
+      DB_USERNAME: prumo_account
+      DB_PASSWORD: ${ACCOUNT_DB_PASSWORD:?Defina ACCOUNT_DB_PASSWORD no arquivo .env}
+      AUTH_BASE_URL: http://auth-service:8081
+      INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:?Defina INTERNAL_SERVICE_KEY no arquivo .env}
+    ports:
+      - "127.0.0.1:8082:8082"
+    depends_on:
+      account-db:
+        condition: service_healthy
+      auth-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8082/actuator/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 30s
+
+  transaction-service:
+    build: ./transaction-service
+    environment:
+      DB_HOST: transaction-db
+      DB_PORT: 5432
+      DB_NAME: prumo_transaction
+      DB_USERNAME: prumo_transaction
+      DB_PASSWORD: ${TRANSACTION_DB_PASSWORD:?Defina TRANSACTION_DB_PASSWORD no arquivo .env}
+      AUTH_BASE_URL: http://auth-service:8081
+      ACCOUNT_BASE_URL: http://account-service:8082
+      INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:?Defina INTERNAL_SERVICE_KEY no arquivo .env}
+    ports:
+      - "127.0.0.1:8083:8083"
+    depends_on:
+      transaction-db:
+        condition: service_healthy
+      account-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8083/actuator/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 30s
+
   auth-db:
     image: postgres:17
     environment:

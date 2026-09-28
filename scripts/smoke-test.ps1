@@ -105,7 +105,7 @@ $entry = Invoke-Check -Method Post -Uri "$transactions/transactions" -ExpectedSt
     occurredAt = '2024-05-03T12:30:00Z'
     categoryId = $category.id
 }
-if (-not $entry.id -or $entry.accountId -ne $account.id -or $entry.type -ne 'EXPENSE' -or $entry.categoryId -ne $category.id -or $entry.occurredAt -ne '2024-05-03T12:30:00Z') {
+if (-not $entry.id -or $entry.accountId -ne $account.id -or $entry.type -ne 'EXPENSE' -or $entry.categoryId -ne $category.id -or $entry.occurredAt.ToUniversalTime() -ne ([datetime]'2024-05-03T12:30:00Z').ToUniversalTime()) {
     throw 'Lançamento criado com dados inesperados.'
 }
 $secondEntry = Invoke-Check -Method Post -Uri "$transactions/transactions" -ExpectedStatus 201 -Token $session.accessToken -Payload @{
@@ -136,7 +136,13 @@ $updatedEntry = Invoke-Check -Method Put -Uri "$transactions/transactions/$($sec
     description = 'Entrada corrigida'
     occurredAt = '2024-06-01T12:30:00Z'
 }
-if ($updatedEntry.accountId -ne $account.id -or $updatedEntry.createdAt -ne $secondEntry.createdAt -or $updatedEntry.occurredAt -ne '2024-06-01T12:30:00Z') {
+$createdAtBefore = [datetimeoffset]::Parse([string]$secondEntry.createdAt).UtcDateTime.ToString('yyyy-MM-ddTHH:mm:ss.ffffff')
+$createdAtAfter = if ($updatedEntry.createdAt -is [datetime]) {
+    $updatedEntry.createdAt.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.ffffff')
+} else {
+    [datetimeoffset]::Parse([string]$updatedEntry.createdAt).UtcDateTime.ToString('yyyy-MM-ddTHH:mm:ss.ffffff')
+}
+if ($updatedEntry.accountId -ne $account.id -or $createdAtAfter -ne $createdAtBefore -or $updatedEntry.occurredAt.ToUniversalTime() -ne ([datetime]'2024-06-01T12:30:00Z').ToUniversalTime()) {
     throw 'Edição alterou conta ou data de criação.'
 }
 $updatedBalance = Invoke-Check -Method Get -Uri "$transactions/transactions/balance?accountId=$($account.id)" -ExpectedStatus 200 -Token $session.accessToken
