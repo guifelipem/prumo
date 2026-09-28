@@ -3,6 +3,7 @@ package com.prumo.transaction.persistence;
 import com.prumo.transaction.domain.Transaction;
 import java.util.UUID;
 import java.util.List;
+import java.math.BigDecimal;
 import com.prumo.transaction.domain.TransactionType;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -43,5 +44,12 @@ public class TransactionRepository {
                         rs.getObject("occurred_at", OffsetDateTime.class).toInstant()),
                 ownerId, accountId, limit, offset
         );
+    }
+
+    public BigDecimal balanceForAccount(UUID ownerId, UUID accountId) {
+        return jdbcTemplate.queryForObject("""
+                SELECT COALESCE(SUM(CASE WHEN type = 'INCOME' THEN amount ELSE -amount END), 0)
+                FROM transactions WHERE owner_id = ? AND account_id = ?
+                """, BigDecimal.class, ownerId, accountId);
     }
 }

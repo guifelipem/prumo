@@ -96,8 +96,9 @@ $entry = Invoke-Check -Method Post -Uri "$transactions/transactions" -ExpectedSt
     type = 'EXPENSE'
     amount = 25.50
     description = 'Teste de integração'
+    occurredAt = '2024-05-03T12:30:00Z'
 }
-if (-not $entry.id -or $entry.accountId -ne $account.id -or $entry.type -ne 'EXPENSE') {
+if (-not $entry.id -or $entry.accountId -ne $account.id -or $entry.type -ne 'EXPENSE' -or $entry.occurredAt -ne '2024-05-03T12:30:00Z') {
     throw 'Lançamento criado com dados inesperados.'
 }
 $secondEntry = Invoke-Check -Method Post -Uri "$transactions/transactions" -ExpectedStatus 201 -Token $session.accessToken -Payload @{
@@ -115,6 +116,12 @@ if ($nextEntries.Count -ne 1 -or $nextEntries[0].id -ne $entry.id) {
     throw 'Paginação de lançamentos inesperada.'
 }
 Invoke-Check -Method Get -Uri "$transactions/transactions?accountId=$($account.id)&size=0" -ExpectedStatus 400 -Token $session.accessToken | Out-Null
+$balance = Invoke-Check -Method Get -Uri "$transactions/transactions/balance?accountId=$($account.id)" -ExpectedStatus 200 -Token $session.accessToken
+if ($balance.accountId -ne $account.id -or [decimal]$balance.balance -ne -15.50) {
+    throw 'Saldo da conta inesperado.'
+}
+$emptyBalance = Invoke-Check -Method Get -Uri "$transactions/transactions/balance?accountId=$($secondAccount.id)" -ExpectedStatus 200 -Token $session.accessToken
+if ([decimal]$emptyBalance.balance -ne 0) { throw 'Saldo de conta sem lançamentos inesperado.' }
 
 $otherEmail = "smoke+other-$suffix@prumo.test"
 Invoke-Check -Method Post -Uri "$auth/users" -ExpectedStatus 201 -Payload @{
@@ -129,6 +136,7 @@ Invoke-Check -Method Get -Uri "$accounts/accounts/$($account.id)" -ExpectedStatu
 $otherAccounts = @(Invoke-Check -Method Get -Uri "$accounts/accounts" -ExpectedStatus 200 -Token $otherSession.accessToken)
 if ($otherAccounts.Count -ne 0) { throw 'Listagem de contas expôs dados de outro usuário.' }
 Invoke-Check -Method Get -Uri "$transactions/transactions?accountId=$($account.id)" -ExpectedStatus 404 -Token $otherSession.accessToken | Out-Null
+Invoke-Check -Method Get -Uri "$transactions/transactions/balance?accountId=$($account.id)" -ExpectedStatus 404 -Token $otherSession.accessToken | Out-Null
 Invoke-Check -Method Post -Uri "$transactions/transactions" -ExpectedStatus 404 -Token $otherSession.accessToken -Payload @{
     accountId = $account.id
     type = 'EXPENSE'

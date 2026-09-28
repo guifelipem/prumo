@@ -7,6 +7,7 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import java.util.List;
 import java.util.UUID;
+import java.math.BigDecimal;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -31,7 +32,7 @@ public class TransactionController {
     ResponseEntity<Transaction> create(@RequestHeader(value = "Authorization", required = false) String authorization,
                                        @Valid @RequestBody CreateTransactionRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(transactions.create(authorization,
-                request.accountId(), request.type(), request.amount(), request.description()));
+                request.accountId(), request.type(), request.amount(), request.description(), request.occurredAt()));
     }
 
     @GetMapping
@@ -41,4 +42,12 @@ public class TransactionController {
                            @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
         return transactions.list(authorization, accountId, page, size);
     }
+
+    @GetMapping("/balance")
+    BalanceResponse balance(@RequestHeader(value = "Authorization", required = false) String authorization,
+                            @RequestParam UUID accountId) {
+        return new BalanceResponse(accountId, transactions.balance(authorization, accountId));
+    }
+
+    public record BalanceResponse(UUID accountId, BigDecimal balance) {}
 }

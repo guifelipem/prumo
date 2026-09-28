@@ -22,10 +22,10 @@ public class TransactionService {
     }
 
     public Transaction create(String authorization, UUID accountId, TransactionType type,
-                              BigDecimal amount, String description) {
+                              BigDecimal amount, String description, Instant occurredAt) {
         UUID ownerId = accounts.requireOwner(accountId, authorization);
         Transaction transaction = new Transaction(UUID.randomUUID(), accountId, type,
-                amount, description.trim(), Instant.now());
+                amount, description.trim(), occurredAt == null ? Instant.now() : occurredAt);
         repository.insert(transaction, ownerId);
         return transaction;
     }
@@ -33,5 +33,10 @@ public class TransactionService {
     public List<Transaction> list(String authorization, UUID accountId, int page, int size) {
         UUID ownerId = accounts.requireOwner(accountId, authorization);
         return repository.listForAccount(ownerId, accountId, (long) page * size, size);
+    }
+
+    public BigDecimal balance(String authorization, UUID accountId) {
+        UUID ownerId = accounts.requireOwner(accountId, authorization);
+        return repository.balanceForAccount(ownerId, accountId);
     }
 }

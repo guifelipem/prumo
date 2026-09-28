@@ -8,7 +8,7 @@ Base inicial de três serviços independentes para controle financeiro pessoal. 
 | `account-service` | Contas financeiras do usuário autenticado | 8082 | `prumo_account` |
 | `transaction-service` | Lançamentos de contas acessíveis ao usuário | 8083 | `prumo_transaction` |
 
-Os três serviços expõem `GET /actuator/health`. Há um fluxo inicial de cadastro, login, criação e listagem de contas e lançamentos. Não há saldo calculado, atualização, exclusão ou notificações.
+Os três serviços expõem `GET /actuator/health`. Há um fluxo inicial de cadastro, login, criação e listagem de contas e lançamentos, além de consulta de saldo por conta. Não há atualização, exclusão ou notificações.
 
 ## Bancos locais com Docker Compose
 
@@ -37,7 +37,7 @@ Com os três serviços ativos e saudáveis, execute `pwsh ./scripts/smoke-test.p
 1. `POST http://localhost:8081/users` com `{"email":"ana@example.com","password":"uma senha com pelo menos 12 caracteres"}` cria o usuário e retorna ID e e-mail (`201`). E-mail duplicado retorna `409`.
 2. `POST http://localhost:8081/sessions` com o mesmo e-mail e senha retorna `accessToken` e `expiresAt`. Credenciais incorretas retornam `401`.
 3. `POST http://localhost:8082/accounts` com `Authorization: Bearer <accessToken>` e `{"name":"Conta corrente","currency":"BRL"}` cria uma conta (`201`). `GET /accounts/{id}` retorna apenas uma conta pertencente ao mesmo usuário. `GET /accounts` lista suas contas.
-4. `POST http://localhost:8083/transactions` com o mesmo cabeçalho e `{"accountId":"<id da conta>","type":"EXPENSE","amount":25.50,"description":"Mercado"}` registra um lançamento (`201`). `INCOME` é o outro tipo aceito. `GET /transactions?accountId=<id da conta>` lista os lançamentos dessa conta após confirmar o acesso do usuário.
+4. `POST http://localhost:8083/transactions` com o mesmo cabeçalho e `{"accountId":"<id da conta>","type":"EXPENSE","amount":25.50,"description":"Mercado","occurredAt":"2024-05-03T12:30:00Z"}` registra um lançamento (`201`). `occurredAt` é opcional e usa o instante atual quando omitido. `INCOME` é o outro tipo aceito. `GET /transactions?accountId=<id da conta>` lista os lançamentos dessa conta após confirmar o acesso do usuário. `GET /transactions/balance?accountId=<id da conta>` retorna `{"accountId":"<id da conta>","balance":0.00}`, calculando receitas menos despesas sobre todos os lançamentos da conta; uma conta vazia tem saldo zero.
 
 As duas listagens aceitam `page` (a partir de 0) e `size` (de 1 a 100), com padrão `page=0&size=20`. Contas são ordenadas por data de criação; lançamentos, do mais recente para o mais antigo. As respostas são listas JSON, sem total de páginas nesta etapa.
 
@@ -50,4 +50,3 @@ Cada serviço controla seu próprio banco e migrações. O `transaction-service`
 Os pacotes continuam pequenos e organizados por responsabilidade dentro de cada serviço. Regras ficam nos serviços, SQL nos repositórios e HTTP nos controllers. A configuração inclui Web, JDBC, PostgreSQL, Flyway, Actuator e testes, sem ORM. A senha é armazenada como hash BCrypt. Este fluxo ainda não inclui logout, renovação de sessão, limitação de tentativas de login ou testes de integração com PostgreSQL; essas melhorias devem acompanhar uma próxima evolução da autenticação.
 
 Em cada serviço, `api` contém controllers e dados de entrada HTTP, `application` concentra os casos de uso, `domain` guarda os tipos do domínio, e `persistence` contém o acesso ao banco próprio. `integration` existe apenas em `account-service` e `transaction-service`, para as chamadas HTTP a outros serviços. Os testes de caso de uso ficam no pacote `application` correspondente.
-=======
