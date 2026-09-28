@@ -1,23 +1,28 @@
 # Prumo
 
-Base inicial de três serviços independentes para controle financeiro pessoal. Cada diretório é um projeto Maven próprio; não há módulo compartilhado nem acesso cruzado a bancos.
+Base de três serviços independentes para controle financeiro pessoal e um gateway HTTP. Cada diretório é um projeto Maven próprio; não há módulo compartilhado nem acesso cruzado a bancos.
 
 | Serviço | Responsabilidade | Porta | Banco lógico |
 | --- | --- | ---: | --- |
 | `auth-service` | Cadastro, login e validação de sessões | 8081 | `prumo_auth` |
 | `account-service` | Contas financeiras do usuário autenticado | 8082 | `prumo_account` |
 | `transaction-service` | Lançamentos e categorias do usuário | 8083 | `prumo_transaction` |
+| `api-gateway` | Entrada HTTP para os três serviços | 8080 | nenhum |
 
 Os três serviços expõem `GET /actuator/health`. Há um fluxo inicial de cadastro, login, criação e listagem de contas e lançamentos, além de consulta de saldo por conta. Não há atualização, exclusão ou notificações.
 
 ## Sistema completo com Docker Compose
 
-O `compose.yaml` constrói e inicia os três serviços e os três bancos PostgreSQL. Cada banco tem seu próprio contêiner e volume persistente. As portas HTTP e PostgreSQL ficam acessíveis apenas em `127.0.0.1`.
+O `compose.yaml` constrói e inicia o gateway, os três serviços e os três bancos PostgreSQL. Cada banco tem seu próprio contêiner e volume persistente. As portas HTTP e PostgreSQL ficam acessíveis apenas em `127.0.0.1`.
 
 1. Copie `.env.example` para `.env` (`Copy-Item .env.example .env` no PowerShell), preencha as três senhas com valores diferentes e gere uma `INTERNAL_SERVICE_KEY` aleatória de pelo menos 32 bytes. O arquivo `.env` é ignorado pelo Git.
 2. Execute `docker compose up --build -d` na raiz do projeto. Docker constrói as aplicações com Maven e Java 21; não é necessário instalar Maven no host.
-3. Confira a inicialização com `docker compose ps`: os seis contêineres devem aparecer como `healthy`. Para parar sem apagar os dados, use `docker compose down`.
+3. Confira a inicialização com `docker compose ps`: os sete contêineres devem aparecer como `healthy`. Para parar sem apagar os dados, use `docker compose down`.
 4. Execute `pwsh ./scripts/smoke-test.ps1` para validar cadastro, autenticação, contas e lançamentos por HTTP.
+
+O gateway atende em `http://localhost:8080` com os caminhos originais: `/users` e `/sessions` vão ao `auth-service`; `/accounts` e `/accounts/{id}` ao `account-service`; `/transactions`, `/transactions/balance`, `/transactions/{id}`, `/categories` e `/categories/{id}` ao `transaction-service`. O endpoint interno `/internal/sessions/introspect` não é roteado. O cabeçalho `Authorization` é repassado sem alteração. O gateway aceita um `X-Correlation-Id` existente ou gera um UUID, repassa o valor ao serviço e o devolve na resposta.
+
+Para testar pelo gateway, rode `pwsh ./scripts/smoke-test.ps1 -AuthBaseUrl http://localhost:8080 -AccountBaseUrl http://localhost:8080 -TransactionBaseUrl http://localhost:8080`. Verifique a saúde em `http://localhost:8080/actuator/health`. CORS permite por padrão `http://localhost:3000`; configure `CORS_ALLOWED_ORIGINS` no `.env` para outra origem do frontend. As URLs dos destinos são configuradas por `AUTH_BASE_URL`, `ACCOUNT_BASE_URL` e `TRANSACTION_BASE_URL` no processo do gateway; o Compose usa os nomes dos serviços na rede interna.
 
 | Aplicação executada no host | Banco | `DB_PORT` | `DB_USERNAME` | `DB_PASSWORD` |
 | --- | --- | ---: | --- | --- |
