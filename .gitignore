@@ -1,0 +1,5 @@
+/documentacao/
+**/target/
+.idea/
+.vscode/
+*.iml
