@@ -21,17 +21,17 @@ public class TransactionRepository {
 
     public void insert(Transaction transaction, UUID ownerId) {
         jdbcTemplate.update("""
-                INSERT INTO transactions (id, owner_id, account_id, type, amount, description, occurred_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO transactions (id, owner_id, account_id, type, amount, description, occurred_at, category_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """, transaction.id(), ownerId, transaction.accountId(), transaction.type().name(),
                 transaction.amount(), transaction.description(),
-                OffsetDateTime.ofInstant(transaction.occurredAt(), ZoneOffset.UTC));
+                OffsetDateTime.ofInstant(transaction.occurredAt(), ZoneOffset.UTC), transaction.categoryId());
     }
 
     public List<Transaction> listForAccount(UUID ownerId, UUID accountId, long offset, int limit) {
         return jdbcTemplate.query(
                 """
-                SELECT id, account_id, type, amount, description, occurred_at FROM transactions
+                SELECT id, account_id, type, amount, description, occurred_at, category_id FROM transactions
                 WHERE owner_id = ? AND account_id = ?
                 ORDER BY occurred_at DESC, id DESC LIMIT ? OFFSET ?
                 """,
@@ -41,7 +41,8 @@ public class TransactionRepository {
                         TransactionType.valueOf(rs.getString("type")),
                         rs.getBigDecimal("amount"),
                         rs.getString("description"),
-                        rs.getObject("occurred_at", OffsetDateTime.class).toInstant()),
+                        rs.getObject("occurred_at", OffsetDateTime.class).toInstant(),
+                        rs.getObject("category_id", UUID.class)),
                 ownerId, accountId, limit, offset
         );
     }

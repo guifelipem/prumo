@@ -16,6 +16,7 @@ public record CreateTransactionRequest(
         @NotNull TransactionType type,
         @NotNull @DecimalMin("0.01") @DecimalMax("99999999999999999.99") @Digits(integer = 17, fraction = 2) BigDecimal amount,
         @NotBlank @Size(max = 255) String description,
-        Instant occurredAt
+        Instant occurredAt,
+        UUID categoryId
 ) {
 }

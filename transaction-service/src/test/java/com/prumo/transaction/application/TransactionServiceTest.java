@@ -10,10 +10,12 @@ import com.prumo.transaction.domain.Transaction;
 import com.prumo.transaction.domain.TransactionType;
 import com.prumo.transaction.integration.AccountClient;
 import com.prumo.transaction.persistence.TransactionRepository;
+import com.prumo.transaction.persistence.CategoryRepository;
 import java.math.BigDecimal;
 import java.time.Instant;
 import org.springframework.web.server.ResponseStatusException;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import org.springframework.http.HttpStatus;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
@@ -21,7 +23,8 @@ class TransactionServiceTest {
 
     private final AccountClient accounts = mock(AccountClient.class);
     private final TransactionRepository repository = mock(TransactionRepository.class);
-    private final TransactionService service = new TransactionService(accounts, repository);
+    private final CategoryRepository categories = mock(CategoryRepository.class);
+    private final TransactionService service = new TransactionService(accounts, repository, categories);
 
     @Test
     void recordsTransactionOnlyForAccountVisibleToToken() {
@@ -30,7 +33,7 @@ class TransactionServiceTest {
         when(accounts.requireOwner(accountId, "Bearer token")).thenReturn(ownerId);
 
         Transaction transaction = service.create("Bearer token", accountId, TransactionType.EXPENSE,
-                new BigDecimal("25.50"), "  Mercado  ", null);
+                new BigDecimal("25.50"), "  Mercado  ", null, null);
 
         assertEquals(accountId, transaction.accountId());
         assertEquals("Mercado", transaction.description());
@@ -46,7 +49,7 @@ class TransactionServiceTest {
         when(accounts.requireOwner(accountId, "Bearer token")).thenReturn(ownerId);
 
         Transaction transaction = service.create("Bearer token", accountId, TransactionType.INCOME,
-                new BigDecimal("10.00"), "Salário", occurredAt);
+                new BigDecimal("10.00"), "Salário", occurredAt, null);
 
         assertEquals(occurredAt, transaction.occurredAt());
         verify(repository).insert(transaction, ownerId);
@@ -73,5 +76,36 @@ class TransactionServiceTest {
         assertThrows(ResponseStatusException.class,
                 () -> service.balance("Bearer other", accountId));
         verifyNoInteractions(repository);
+    }
+
+    @Test
+    void rejectsCategoryNotOwnedOrNotCompatibleWithTransactionType() {
+        UUID accountId = UUID.randomUUID();
+        UUID ownerId = UUID.randomUUID();
+        UUID categoryId = UUID.randomUUID();
+        when(accounts.requireOwner(accountId, "Bearer token")).thenReturn(ownerId);
+
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class,
+                () -> service.create("Bearer token", accountId, TransactionType.EXPENSE,
+                        new BigDecimal("80.00"), "Mercado", null, categoryId));
+
+        assertEquals(HttpStatus.NOT_FOUND, exception.getStatusCode());
+        verify(categories).supports(ownerId, categoryId, TransactionType.EXPENSE);
+        verifyNoInteractions(repository);
+    }
+
+    @Test
+    void recordsTransactionWithOwnedCompatibleCategory() {
+        UUID accountId = UUID.randomUUID();
+        UUID ownerId = UUID.randomUUID();
+        UUID categoryId = UUID.randomUUID();
+        when(accounts.requireOwner(accountId, "Bearer token")).thenReturn(ownerId);
+        when(categories.supports(ownerId, categoryId, TransactionType.EXPENSE)).thenReturn(true);
+
+        Transaction transaction = service.create("Bearer token", accountId, TransactionType.EXPENSE,
+                new BigDecimal("80.00"), "Mercado", null, categoryId);
+
+        assertEquals(categoryId, transaction.categoryId());
+        verify(repository).insert(transaction, ownerId);
     }
 }

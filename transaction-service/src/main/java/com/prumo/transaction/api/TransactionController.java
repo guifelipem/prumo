@@ -32,7 +32,8 @@ public class TransactionController {
     ResponseEntity<Transaction> create(@RequestHeader(value = "Authorization", required = false) String authorization,
                                        @Valid @RequestBody CreateTransactionRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(transactions.create(authorization,
-                request.accountId(), request.type(), request.amount(), request.description(), request.occurredAt()));
+                request.accountId(), request.type(), request.amount(), request.description(), request.occurredAt(),
+                request.categoryId()));
     }
 
     @GetMapping
