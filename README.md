@@ -10,13 +10,14 @@ Base inicial de três serviços independentes para controle financeiro pessoal. 
 
 Os três serviços expõem `GET /actuator/health`. Há um fluxo inicial de cadastro, login, criação e listagem de contas e lançamentos, além de consulta de saldo por conta. Não há atualização, exclusão ou notificações.
 
-## Bancos locais com Docker Compose
+## Sistema completo com Docker Compose
 
-O `compose.yaml` inicia **somente os três bancos PostgreSQL**. Cada banco tem seu próprio contêiner, volume persistente e porta acessível apenas em `127.0.0.1`.
+O `compose.yaml` constrói e inicia os três serviços e os três bancos PostgreSQL. Cada banco tem seu próprio contêiner e volume persistente. As portas HTTP e PostgreSQL ficam acessíveis apenas em `127.0.0.1`.
 
 1. Copie `.env.example` para `.env` (`Copy-Item .env.example .env` no PowerShell), preencha as três senhas com valores diferentes e gere uma `INTERNAL_SERVICE_KEY` aleatória de pelo menos 32 bytes. O arquivo `.env` é ignorado pelo Git.
-2. Execute `docker compose up -d` na raiz do projeto.
-3. Confira a inicialização com `docker compose ps`. Para parar sem apagar os dados, use `docker compose down`.
+2. Execute `docker compose up --build -d` na raiz do projeto. Docker constrói as aplicações com Maven e Java 21; não é necessário instalar Maven no host.
+3. Confira a inicialização com `docker compose ps`: os seis contêineres devem aparecer como `healthy`. Para parar sem apagar os dados, use `docker compose down`.
+4. Execute `pwsh ./scripts/smoke-test.ps1` para validar cadastro, autenticação, contas e lançamentos por HTTP.
 
 | Aplicação executada no host | Banco | `DB_PORT` | `DB_USERNAME` | `DB_PASSWORD` |
 | --- | --- | ---: | --- | --- |
@@ -24,13 +25,13 @@ O `compose.yaml` inicia **somente os três bancos PostgreSQL**. Cada banco tem s
 | `account-service` | `prumo_account` | 5434 | `prumo_account` | valor de `ACCOUNT_DB_PASSWORD` no `.env` |
 | `transaction-service` | `prumo_transaction` | 5435 | `prumo_transaction` | valor de `TRANSACTION_DB_PASSWORD` no `.env` |
 
-As aplicações continuam fora do Compose. Para iniciá-las localmente, use Java 21 e Maven 3.6.3+, configure as variáveis da tabela no processo de cada serviço e execute `mvn spring-boot:run` em seu diretório. `DB_HOST` permanece `localhost` e `DB_NAME` já tem o valor correspondente como padrão no `application.yml`. Configure o mesmo `INTERNAL_SERVICE_KEY` aleatório de pelo menos 32 bytes nos três serviços. A porta HTTP de cada aplicação pode ser alterada com `SERVER_PORT`.
+Para iniciar uma aplicação fora do Compose, use Java 21 e Maven 3.6.3+, configure as variáveis da tabela no processo do serviço e execute `mvn spring-boot:run` em seu diretório. `DB_HOST` permanece `localhost` e `DB_NAME` já tem o valor correspondente como padrão no `application.yml`. Configure o mesmo `INTERNAL_SERVICE_KEY` aleatório de pelo menos 32 bytes nos três serviços. A porta HTTP de cada aplicação pode ser alterada com `SERVER_PORT`. Dentro do Compose, os serviços usam os nomes dos contêineres como endereços e a porta interna `5432`.
 
 Para usar um PostgreSQL instalado fora do Docker, o script `database/bootstrap.psql` continua disponível como alternativa para criar os bancos e usuários manualmente.
 
 O endpoint `/actuator/health` verifica também a conexão com o banco. Cada serviço aplica suas próprias migrações Flyway na inicialização e exige conexão válida. O `account-service` consulta o `auth-service` pelo endereço `AUTH_BASE_URL` (padrão `http://localhost:8081`). O `transaction-service` consulta o `account-service` por `ACCOUNT_BASE_URL` (padrão `http://localhost:8082`) e valida tokens para categorias diretamente no `auth-service` por `AUTH_BASE_URL`. Configure o mesmo `INTERNAL_SERVICE_KEY` também no `transaction-service`.
 
-Com os três serviços ativos e saudáveis, execute `pwsh ./scripts/smoke-test.ps1` na raiz do projeto. O script cria dois usuários de teste, duas contas e dois lançamentos, percorre o fluxo HTTP completo, verifica a paginação e confirma que o segundo usuário não consegue acessar a conta do primeiro. Ele cria dados reais nesses bancos; use bancos de desenvolvimento. As URLs podem ser alteradas pelos parâmetros `-AuthBaseUrl`, `-AccountBaseUrl` e `-TransactionBaseUrl`.
+O script de smoke test cria dois usuários de teste, duas contas e dois lançamentos, percorre o fluxo HTTP completo, verifica a paginação e confirma que o segundo usuário não consegue acessar a conta do primeiro. Ele cria dados reais nesses bancos; use bancos de desenvolvimento. As URLs podem ser alteradas pelos parâmetros `-AuthBaseUrl`, `-AccountBaseUrl` e `-TransactionBaseUrl`.
 
 ## Fluxo HTTP inicial
 

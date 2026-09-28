@@ -26,7 +26,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 
-@SpringBootTest(properties = "app.internal-service-key=test-key")
+@SpringBootTest(properties = "app.internal-service-key=12345678901234567890123456789012")
 @Testcontainers
 class TransactionPostgresIntegrationTest {
     @Container
