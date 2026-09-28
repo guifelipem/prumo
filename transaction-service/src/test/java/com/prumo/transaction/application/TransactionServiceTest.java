@@ -9,10 +9,12 @@ import static org.mockito.Mockito.when;
 import com.prumo.transaction.domain.Transaction;
 import com.prumo.transaction.domain.TransactionType;
 import com.prumo.transaction.integration.AccountClient;
+import com.prumo.transaction.integration.IdentityClient;
 import com.prumo.transaction.persistence.TransactionRepository;
 import com.prumo.transaction.persistence.CategoryRepository;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.Optional;
 import org.springframework.web.server.ResponseStatusException;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import org.springframework.http.HttpStatus;
@@ -24,7 +26,8 @@ class TransactionServiceTest {
     private final AccountClient accounts = mock(AccountClient.class);
     private final TransactionRepository repository = mock(TransactionRepository.class);
     private final CategoryRepository categories = mock(CategoryRepository.class);
-    private final TransactionService service = new TransactionService(accounts, repository, categories);
+    private final IdentityClient identities = mock(IdentityClient.class);
+    private final TransactionService service = new TransactionService(accounts, repository, categories, identities);
 
     @Test
     void recordsTransactionOnlyForAccountVisibleToToken() {
@@ -107,5 +110,67 @@ class TransactionServiceTest {
 
         assertEquals(categoryId, transaction.categoryId());
         verify(repository).insert(transaction, ownerId);
+    }
+
+    @Test
+    void updatesOwnedTransactionWithoutChangingAccountOrCreationTime() {
+        UUID ownerId = UUID.randomUUID();
+        UUID accountId = UUID.randomUUID();
+        UUID transactionId = UUID.randomUUID();
+        UUID categoryId = UUID.randomUUID();
+        Instant createdAt = Instant.parse("2024-01-01T10:00:00Z");
+        Instant occurredAt = Instant.parse("2024-05-03T12:30:00Z");
+        Transaction current = new Transaction(transactionId, accountId, TransactionType.EXPENSE,
+                new BigDecimal("80.00"), "Mercado", createdAt, null, createdAt);
+        when(identities.requireUser("Bearer token")).thenReturn(ownerId);
+        when(repository.findOwned(ownerId, transactionId)).thenReturn(Optional.of(current));
+        when(categories.supports(ownerId, categoryId, TransactionType.INCOME)).thenReturn(true);
+        when(repository.update(org.mockito.ArgumentMatchers.eq(ownerId), org.mockito.ArgumentMatchers.any(Transaction.class)))
+                .thenReturn(1);
+
+        Transaction updated = service.update("Bearer token", transactionId, TransactionType.INCOME,
+                new BigDecimal("100.00"), "  Reembolso  ", occurredAt, categoryId);
+
+        assertEquals(accountId, updated.accountId());
+        assertEquals(createdAt, updated.createdAt());
+        assertEquals(occurredAt, updated.occurredAt());
+        assertEquals("Reembolso", updated.description());
+        verify(repository).update(ownerId, updated);
+    }
+
+    @Test
+    void cannotUpdateOrDeleteAnotherUsersTransaction() {
+        UUID ownerId = UUID.randomUUID();
+        UUID transactionId = UUID.randomUUID();
+        when(identities.requireUser("Bearer other")).thenReturn(ownerId);
+
+        ResponseStatusException update = assertThrows(ResponseStatusException.class,
+                () -> service.update("Bearer other", transactionId, TransactionType.EXPENSE,
+                        new BigDecimal("1.00"), "Teste", Instant.now(), null));
+        ResponseStatusException delete = assertThrows(ResponseStatusException.class,
+                () -> service.delete("Bearer other", transactionId));
+
+        assertEquals(HttpStatus.NOT_FOUND, update.getStatusCode());
+        assertEquals(HttpStatus.NOT_FOUND, delete.getStatusCode());
+        verify(repository).findOwned(ownerId, transactionId);
+        verify(repository).delete(ownerId, transactionId);
+    }
+
+    @Test
+    void cannotUpdateWithAnotherUsersCategory() {
+        UUID ownerId = UUID.randomUUID();
+        UUID transactionId = UUID.randomUUID();
+        Transaction current = new Transaction(transactionId, UUID.randomUUID(), TransactionType.EXPENSE,
+                new BigDecimal("80.00"), "Mercado", Instant.now(), null, Instant.now());
+        when(identities.requireUser("Bearer token")).thenReturn(ownerId);
+        when(repository.findOwned(ownerId, transactionId)).thenReturn(Optional.of(current));
+
+        ResponseStatusException error = assertThrows(ResponseStatusException.class,
+                () -> service.update("Bearer token", transactionId, TransactionType.EXPENSE,
+                        new BigDecimal("50.00"), "Mercado", Instant.now(), UUID.randomUUID()));
+
+        assertEquals(HttpStatus.NOT_FOUND, error.getStatusCode());
+        org.mockito.Mockito.verify(repository, org.mockito.Mockito.never())
+                .update(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
     }
 }

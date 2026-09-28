@@ -12,6 +12,9 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -51,4 +54,18 @@ public class TransactionController {
     }
 
     public record BalanceResponse(UUID accountId, BigDecimal balance) {}
+
+    @PutMapping("/{id}")
+    Transaction update(@RequestHeader(value = "Authorization", required = false) String authorization,
+                       @PathVariable UUID id, @Valid @RequestBody UpdateTransactionRequest request) {
+        return transactions.update(authorization, id, request.type(), request.amount(),
+                request.description(), request.occurredAt(), request.categoryId());
+    }
+
+    @DeleteMapping("/{id}")
+    ResponseEntity<Void> delete(@RequestHeader(value = "Authorization", required = false) String authorization,
+                                @PathVariable UUID id) {
+        transactions.delete(authorization, id);
+        return ResponseEntity.noContent().build();
+    }
 }

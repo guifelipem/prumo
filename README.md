@@ -43,6 +43,8 @@ As duas listagens aceitam `page` (a partir de 0) e `size` (de 1 a 100), com padr
 
 Categorias ficam no `transaction-service`: `POST /categories` recebe `{"name":"Alimentação","type":"EXPENSE"}`, `GET /categories` lista as categorias do usuário, `PUT /categories/{id}` altera nome e tipo, e `DELETE /categories/{id}` exclui uma categoria sem lançamentos (`409` se estiver em uso). O tipo pode ser `INCOME`, `EXPENSE` ou `BOTH`; quando omitido, usa `BOTH`. Na criação de transação, `categoryId` é opcional e só aceita uma categoria do próprio usuário compatível com o tipo do lançamento.
 
+`PUT /transactions/{id}` substitui `type`, `amount`, `description`, `occurredAt` e `categoryId` (opcional), sem permitir trocar a conta. `createdAt` é definido na criação e permanece fixo; para lançamentos anteriores à migration, ele recebe o valor histórico de `occurredAt`. `DELETE /transactions/{id}` remove o lançamento. Ambos exigem o token do proprietário e retornam `404` para lançamentos inexistentes ou de outro usuário. O saldo é calculado a partir dos lançamentos atuais, refletindo edições e exclusões.
+
 Tokens são aleatórios, expiram em uma hora e são armazenados apenas como hash no banco de autenticação. A validação síncrona usa `POST /internal/sessions/introspect` com `X-Service-Key`; o cliente de contas falha fechado se a autenticação estiver indisponível. O serviço de lançamentos consulta a conta usando o token recebido. As chamadas entre serviços têm timeout de dois segundos. Em um ambiente fora da máquina local, use HTTPS e mantenha o endpoint interno acessível apenas na rede privada.
 
 ## Limites entre serviços
