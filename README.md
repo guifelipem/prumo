@@ -51,6 +51,10 @@ Tokens são aleatórios, expiram em uma hora e são armazenados apenas como hash
 
 Cada serviço controla seu próprio banco e migrações. O `transaction-service` guarda o ID da conta e do proprietário confirmado pelo `account-service`, sem chave estrangeira entre bancos ou acesso direto ao banco de contas. A comunicação síncrona é usada apenas para autenticar a requisição e confirmar o acesso à conta. Eventos via RabbitMQ ficam para necessidades assíncronas futuras, como notificações, sem introduzir mensageria agora.
 
-Os pacotes continuam pequenos e organizados por responsabilidade dentro de cada serviço. Regras ficam nos serviços, SQL nos repositórios e HTTP nos controllers. A configuração inclui Web, JDBC, PostgreSQL, Flyway, Actuator e testes, sem ORM. A senha é armazenada como hash BCrypt. Este fluxo ainda não inclui logout, renovação de sessão, limitação de tentativas de login ou testes de integração com PostgreSQL; essas melhorias devem acompanhar uma próxima evolução da autenticação.
+Os pacotes continuam pequenos e organizados por responsabilidade dentro de cada serviço. Regras ficam nos serviços, SQL nos repositórios e HTTP nos controllers. A configuração inclui Web, JDBC, PostgreSQL, Flyway, Actuator e testes, sem ORM. A senha é armazenada como hash BCrypt. Este fluxo ainda não inclui logout, renovação de sessão ou limitação de tentativas de login.
+
+## Testes com PostgreSQL real
+
+Com Java 21, Maven e Docker em execução, rode `mvn test` dentro de cada diretório de serviço. Os testes de integração usam Testcontainers para iniciar um PostgreSQL temporário. O Spring aplica as migrations Flyway na inicialização do contexto; os testes exercitam repositórios e, no `transaction-service`, os fluxos de criação, listagem, edição, exclusão e saldo. As chamadas HTTP a outros serviços são simuladas nesses testes. Não é necessário iniciar o Compose nem configurar `.env` para executá-los.
 
 Em cada serviço, `api` contém controllers e dados de entrada HTTP, `application` concentra os casos de uso, `domain` guarda os tipos do domínio, e `persistence` contém o acesso ao banco próprio. `integration` existe apenas em `account-service` e `transaction-service`, para as chamadas HTTP a outros serviços. Os testes de caso de uso ficam no pacote `application` correspondente.
