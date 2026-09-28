@@ -1,0 +1,56 @@
+services:
+  auth-db:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: prumo_auth
+      POSTGRES_USER: prumo_auth
+      POSTGRES_PASSWORD: ${AUTH_DB_PASSWORD:?Defina AUTH_DB_PASSWORD no arquivo .env}
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - auth-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  account-db:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: prumo_account
+      POSTGRES_USER: prumo_account
+      POSTGRES_PASSWORD: ${ACCOUNT_DB_PASSWORD:?Defina ACCOUNT_DB_PASSWORD no arquivo .env}
+    ports:
+      - "127.0.0.1:5434:5432"
+    volumes:
+      - account-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  transaction-db:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: prumo_transaction
+      POSTGRES_USER: prumo_transaction
+      POSTGRES_PASSWORD: ${TRANSACTION_DB_PASSWORD:?Defina TRANSACTION_DB_PASSWORD no arquivo .env}
+    ports:
+      - "127.0.0.1:5435:5432"
+    volumes:
+      - transaction-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+volumes:
+  auth-db-data:
+  account-db-data:
+  transaction-db-data:

@@ -1,0 +1,11 @@
+\prompt 'Senha para prumo_auth: ' auth_password
+\prompt 'Senha para prumo_account: ' account_password
+\prompt 'Senha para prumo_transaction: ' transaction_password
+
+CREATE ROLE prumo_auth LOGIN PASSWORD :'auth_password';
+CREATE ROLE prumo_account LOGIN PASSWORD :'account_password';
+CREATE ROLE prumo_transaction LOGIN PASSWORD :'transaction_password';
+
+CREATE DATABASE prumo_auth OWNER prumo_auth;
+CREATE DATABASE prumo_account OWNER prumo_account;
+CREATE DATABASE prumo_transaction OWNER prumo_transaction;
