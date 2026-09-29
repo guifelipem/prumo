@@ -15,7 +15,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [auth-service, account-service, transaction-service]
+        service: [auth-service, account-service, transaction-service, api-gateway, notification-service]
     steps:
       - name: Baixar código
         uses: actions/checkout@v4
@@ -30,3 +30,34 @@ jobs:
 
       - name: Executar testes
         run: mvn -B -ntp -f "${{ matrix.service }}/pom.xml" verify
+
+  frontend:
+    name: Build frontend
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v4
+      - name: Configurar Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Instalar dependências
+        run: npm ci --prefix frontend
+      - name: Compilar frontend
+        run: npm run build --prefix frontend
+
+  docker:
+    name: Imagem ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    needs: [test, frontend]
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [auth-service, account-service, transaction-service, api-gateway, notification-service]
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v4
+      - name: Validar imagem
+        run: docker build -t "prumo/${{ matrix.service }}:ci" "${{ matrix.service }}"

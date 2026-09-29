@@ -6,6 +6,7 @@ spring:
     username: ${DB_USERNAME:}
     password: ${DB_PASSWORD:}
   rabbitmq:
+    publisher-confirm-type: simple
     host: ${RABBITMQ_HOST:localhost}
     port: ${RABBITMQ_PORT:5672}
     username: ${RABBITMQ_USERNAME:prumo}
@@ -27,3 +28,7 @@ management:
   endpoint:
     health:
       show-details: never
+
+logging:
+  pattern:
+    level: "%5p [correlationId=%X{correlationId:-}]"

@@ -8,6 +8,7 @@ import java.util.Set;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.amqp.AmqpRejectAndDontRequeueException;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.stereotype.Component;
@@ -24,6 +25,8 @@ public class TransactionEventConsumer {
     public void consume(byte[] body) {
         try {
             JsonNode event = mapper.readTree(body);
+            String correlationId = event.path("correlationId").asText(null);
+            if (correlationId != null && !correlationId.isBlank()) MDC.put("correlationId", correlationId);
             UUID eventId = UUID.fromString(required(event, "eventId"));
             String type = required(event, "eventType");
             Instant occurredAt = Instant.parse(required(event, "occurredAt"));
@@ -41,6 +44,8 @@ public class TransactionEventConsumer {
         } catch (IOException | IllegalArgumentException error) {
             log.warn("Evento de transação rejeitado: {}", error.getMessage());
             throw new AmqpRejectAndDontRequeueException("Evento de transação inválido", error);
+        } finally {
+            MDC.remove("correlationId");
         }
     }
 

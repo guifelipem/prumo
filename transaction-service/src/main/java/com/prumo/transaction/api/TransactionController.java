@@ -8,6 +8,8 @@ import jakarta.validation.constraints.Min;
 import java.util.List;
 import java.util.UUID;
 import java.math.BigDecimal;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -53,7 +55,7 @@ public class TransactionController {
         return new BalanceResponse(accountId, transactions.balance(authorization, accountId));
     }
 
-    public record BalanceResponse(UUID accountId, BigDecimal balance) {}
+    public record BalanceResponse(UUID accountId, @JsonSerialize(using = ToStringSerializer.class) BigDecimal balance) {}
 
     @PutMapping("/{id}")
     Transaction update(@RequestHeader(value = "Authorization", required = false) String authorization,

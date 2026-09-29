@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.server.ResponseStatusException;
+import org.slf4j.MDC;
 
 @Component
 public class IdentityClient {
@@ -23,7 +24,12 @@ public class IdentityClient {
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(2000);
         factory.setReadTimeout(2000);
-        this.client = RestClient.builder().baseUrl(authBaseUrl).requestFactory(factory).build();
+        this.client = RestClient.builder().baseUrl(authBaseUrl).requestFactory(factory)
+                .requestInterceptor((request, body, execution) -> {
+                    String id = MDC.get("correlationId");
+                    if (id != null) request.getHeaders().set("X-Correlation-Id", id);
+                    return execution.execute(request, body);
+                }).build();
         this.serviceKey = serviceKey;
     }
 

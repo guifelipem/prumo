@@ -5,6 +5,8 @@ import com.prumo.transaction.domain.TransactionType;
 import com.prumo.transaction.domain.Transfer;
 import com.prumo.transaction.integration.AccountClient;
 import com.prumo.transaction.integration.IdentityClient;
+import com.prumo.transaction.integration.TransactionEvent;
+import com.prumo.transaction.persistence.OutboxRepository;
 import com.prumo.transaction.persistence.TransactionRepository;
 import com.prumo.transaction.persistence.TransferRepository;
 import java.math.BigDecimal;
@@ -22,13 +24,15 @@ public class TransferService {
     private final IdentityClient identities;
     private final TransactionRepository transactions;
     private final TransferRepository transfers;
+    private final OutboxRepository events;
 
     public TransferService(AccountClient accounts, IdentityClient identities,
-                           TransactionRepository transactions, TransferRepository transfers) {
+                           TransactionRepository transactions, TransferRepository transfers, OutboxRepository events) {
         this.accounts = accounts;
         this.identities = identities;
         this.transactions = transactions;
         this.transfers = transfers;
+        this.events = events;
     }
 
     @Transactional
@@ -40,8 +44,12 @@ public class TransferService {
         Transfer transfer = new Transfer(UUID.randomUUID(), ownerId, source, destination, amount,
                 description.trim(), occurredAt == null ? now : occurredAt, now);
         transfers.insert(transfer);
-        transactions.insert(leg(transfer, source, TransactionType.EXPENSE), ownerId);
-        transactions.insert(leg(transfer, destination, TransactionType.INCOME), ownerId);
+        Transaction expense = leg(transfer, source, TransactionType.EXPENSE);
+        Transaction income = leg(transfer, destination, TransactionType.INCOME);
+        transactions.insert(expense, ownerId);
+        transactions.insert(income, ownerId);
+        events.save(TransactionEvent.of("TransactionCreated", ownerId, expense));
+        events.save(TransactionEvent.of("TransactionCreated", ownerId, income));
         return transfer;
     }
 
@@ -71,15 +79,22 @@ public class TransferService {
                 || transfers.updateLeg(ownerId, id, "INCOME", destination, updated) != 1) {
             throw new IllegalStateException("Transferência sem as duas movimentações");
         }
+        for (Transaction leg : transactions.listForTransfer(ownerId, id)) {
+            events.save(TransactionEvent.of("TransactionUpdated", ownerId, leg));
+        }
         return updated;
     }
 
     @Transactional
     public void delete(String authorization, UUID id) {
         Transfer transfer = get(authorization, id);
+        List<Transaction> legs = transactions.listForTransfer(transfer.ownerId(), id);
         if (transfers.deleteLegs(transfer.ownerId(), id) != 2
                 || transfers.delete(transfer.ownerId(), id) != 1) {
             throw new IllegalStateException("Transferência sem as duas movimentações");
+        }
+        for (Transaction leg : legs) {
+            events.save(TransactionEvent.of("TransactionDeleted", transfer.ownerId(), leg));
         }
     }
 

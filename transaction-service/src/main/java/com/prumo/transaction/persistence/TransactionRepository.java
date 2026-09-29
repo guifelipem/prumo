@@ -51,6 +51,13 @@ public class TransactionRepository {
                 """, (rs, rowNum) -> map(rs), ownerId, id).stream().findFirst();
     }
 
+    public List<Transaction> listForTransfer(UUID ownerId, UUID transferId) {
+        return jdbcTemplate.query("""
+                SELECT id, account_id, type, amount, description, occurred_at, category_id, created_at, transfer_id
+                FROM transactions WHERE owner_id = ? AND transfer_id = ? ORDER BY type
+                """, (rs, rowNum) -> map(rs), ownerId, transferId);
+    }
+
     public int update(UUID ownerId, Transaction transaction) {
         return jdbcTemplate.update("""
                 UPDATE transactions SET type = ?, amount = ?, description = ?, occurred_at = ?, category_id = ?
