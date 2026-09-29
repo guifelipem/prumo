@@ -24,18 +24,18 @@ public class TransactionRepository {
 
     public void insert(Transaction transaction, UUID ownerId) {
         jdbcTemplate.update("""
-                INSERT INTO transactions (id, owner_id, account_id, type, amount, description, occurred_at, category_id, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO transactions (id, owner_id, account_id, type, amount, description, occurred_at, category_id, created_at, transfer_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, transaction.id(), ownerId, transaction.accountId(), transaction.type().name(),
                 transaction.amount(), transaction.description(),
                 OffsetDateTime.ofInstant(transaction.occurredAt(), ZoneOffset.UTC), transaction.categoryId(),
-                OffsetDateTime.ofInstant(transaction.createdAt(), ZoneOffset.UTC));
+                OffsetDateTime.ofInstant(transaction.createdAt(), ZoneOffset.UTC), transaction.transferId());
     }
 
     public List<Transaction> listForAccount(UUID ownerId, UUID accountId, long offset, int limit) {
         return jdbcTemplate.query(
                 """
-                SELECT id, account_id, type, amount, description, occurred_at, category_id, created_at FROM transactions
+                SELECT id, account_id, type, amount, description, occurred_at, category_id, created_at, transfer_id FROM transactions
                 WHERE owner_id = ? AND account_id = ?
                 ORDER BY occurred_at DESC, id DESC LIMIT ? OFFSET ?
                 """,
@@ -46,7 +46,7 @@ public class TransactionRepository {
 
     public Optional<Transaction> findOwned(UUID ownerId, UUID id) {
         return jdbcTemplate.query("""
-                SELECT id, account_id, type, amount, description, occurred_at, category_id, created_at
+                SELECT id, account_id, type, amount, description, occurred_at, category_id, created_at, transfer_id
                 FROM transactions WHERE owner_id = ? AND id = ?
                 """, (rs, rowNum) -> map(rs), ownerId, id).stream().findFirst();
     }
@@ -54,14 +54,14 @@ public class TransactionRepository {
     public int update(UUID ownerId, Transaction transaction) {
         return jdbcTemplate.update("""
                 UPDATE transactions SET type = ?, amount = ?, description = ?, occurred_at = ?, category_id = ?
-                WHERE owner_id = ? AND id = ?
+                WHERE owner_id = ? AND id = ? AND transfer_id IS NULL
                 """, transaction.type().name(), transaction.amount(), transaction.description(),
                 OffsetDateTime.ofInstant(transaction.occurredAt(), ZoneOffset.UTC), transaction.categoryId(),
                 ownerId, transaction.id());
     }
 
     public int delete(UUID ownerId, UUID id) {
-        return jdbcTemplate.update("DELETE FROM transactions WHERE owner_id = ? AND id = ?", ownerId, id);
+        return jdbcTemplate.update("DELETE FROM transactions WHERE owner_id = ? AND id = ? AND transfer_id IS NULL", ownerId, id);
     }
 
     private Transaction map(ResultSet rs) throws SQLException {
@@ -69,7 +69,8 @@ public class TransactionRepository {
                 TransactionType.valueOf(rs.getString("type")), rs.getBigDecimal("amount"),
                 rs.getString("description"), rs.getObject("occurred_at", OffsetDateTime.class).toInstant(),
                 rs.getObject("category_id", UUID.class),
-                rs.getObject("created_at", OffsetDateTime.class).toInstant());
+                rs.getObject("created_at", OffsetDateTime.class).toInstant(),
+                rs.getObject("transfer_id", UUID.class));
     }
 
     public BigDecimal balanceForAccount(UUID ownerId, UUID accountId) {

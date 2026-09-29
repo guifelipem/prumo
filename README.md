@@ -1,6 +1,6 @@
 # Prumo
 
-Base de três serviços independentes para controle financeiro pessoal e um gateway HTTP. Cada diretório é um projeto Maven próprio; não há módulo compartilhado nem acesso cruzado a bancos.
+Base de serviços independentes para controle financeiro pessoal e um gateway HTTP. Cada diretório Java é um projeto Maven próprio; não há módulo compartilhado nem acesso cruzado a bancos.
 
 | Serviço | Responsabilidade | Porta | Banco lógico |
 | --- | --- | ---: | --- |
@@ -8,16 +8,17 @@ Base de três serviços independentes para controle financeiro pessoal e um gate
 | `account-service` | Contas financeiras do usuário autenticado | 8082 | `prumo_account` |
 | `transaction-service` | Lançamentos e categorias do usuário | 8083 | `prumo_transaction` |
 | `api-gateway` | Entrada HTTP para os três serviços | 8080 | nenhum |
+| `notification-service` | Consumo e registro de eventos de transação | sem HTTP | nenhum |
 
-Os três serviços expõem `GET /actuator/health`. Há um fluxo inicial de cadastro, login, criação e listagem de contas e lançamentos, além de consulta de saldo por conta. Não há atualização, exclusão ou notificações.
+Os serviços HTTP expõem `GET /actuator/health`. O consumidor de notificações registra eventos no log; ele ainda não envia mensagens ao usuário.
 
 ## Sistema completo com Docker Compose
 
-O `compose.yaml` constrói e inicia o gateway, os três serviços e os três bancos PostgreSQL. Cada banco tem seu próprio contêiner e volume persistente. As portas HTTP e PostgreSQL ficam acessíveis apenas em `127.0.0.1`.
+O `compose.yaml` constrói e inicia o gateway, os quatro serviços, os três bancos PostgreSQL e o RabbitMQ. Cada banco e o RabbitMQ têm volume persistente. As portas publicadas ficam acessíveis apenas em `127.0.0.1`.
 
-1. Copie `.env.example` para `.env` (`Copy-Item .env.example .env` no PowerShell), preencha as três senhas com valores diferentes e gere uma `INTERNAL_SERVICE_KEY` aleatória de pelo menos 32 bytes. O arquivo `.env` é ignorado pelo Git.
+1. Copie `.env.example` para `.env` (`Copy-Item .env.example .env` no PowerShell), preencha as três senhas de banco e `RABBITMQ_PASSWORD` com valores diferentes e gere uma `INTERNAL_SERVICE_KEY` aleatória de pelo menos 32 bytes. Se já possui `.env`, adicione `RABBITMQ_PASSWORD`. O arquivo `.env` é ignorado pelo Git.
 2. Execute `docker compose up --build -d` na raiz do projeto. Docker constrói as aplicações com Maven e Java 21; não é necessário instalar Maven no host.
-3. Confira a inicialização com `docker compose ps`: os sete contêineres devem aparecer como `healthy`. Para parar sem apagar os dados, use `docker compose down`.
+3. Confira a inicialização com `docker compose ps`: os serviços HTTP, bancos e RabbitMQ devem aparecer como `healthy`; `notification-service` deve aparecer como `running`. Para parar sem apagar os dados, use `docker compose down`.
 4. Execute `pwsh ./scripts/smoke-test.ps1` para validar cadastro, autenticação, contas e lançamentos por HTTP.
 
 O gateway atende em `http://localhost:8080` com os caminhos originais: `/users` e `/sessions` vão ao `auth-service`; `/accounts` e `/accounts/{id}` ao `account-service`; `/transactions`, `/transactions/balance`, `/transactions/{id}`, `/categories` e `/categories/{id}` ao `transaction-service`. O endpoint interno `/internal/sessions/introspect` não é roteado. O cabeçalho `Authorization` é repassado sem alteração. O gateway aceita um `X-Correlation-Id` existente ou gera um UUID, repassa o valor ao serviço e o devolve na resposta.
@@ -53,9 +54,23 @@ Categorias ficam no `transaction-service`: `POST /categories` recebe `{"name":"A
 
 Tokens são aleatórios, expiram em uma hora e são armazenados apenas como hash no banco de autenticação. A validação síncrona usa `POST /internal/sessions/introspect` com `X-Service-Key`; o cliente de contas falha fechado se a autenticação estiver indisponível. O serviço de lançamentos consulta a conta usando o token recebido. As chamadas entre serviços têm timeout de dois segundos. Em um ambiente fora da máquina local, use HTTPS e mantenha o endpoint interno acessível apenas na rede privada.
 
+## Eventos de transação
+
+O `transaction-service` publica mensagens JSON no exchange durável `prumo.transactions` com as routing keys `TransactionCreated`, `TransactionUpdated` e `TransactionDeleted`. A fila durável `prumo.notifications.transactions` recebe os três tipos. Cada mensagem inclui `eventId`, `eventType`, `occurredAt`, `ownerId`, `transactionId`, `accountId` e o estado da transação. Na exclusão, o estado é o último registro antes de removê-lo.
+
+O `notification-service` consome a fila, valida IDs, tipo, horário e correspondência dos IDs com os dados da transação, e registra no log o tipo e os identificadores. Mensagens inválidas são rejeitadas sem reentrega. Para acompanhar o fluxo após criar, editar ou excluir uma transação, execute `docker compose logs -f notification-service`. O painel local do RabbitMQ fica em `http://localhost:15672` com usuário `prumo` e senha `RABBITMQ_PASSWORD`.
+
+Esta primeira implementação publica depois da gravação no banco. Banco e RabbitMQ não participam de uma transação atômica: uma falha de publicação após a gravação pode deixar a alteração persistida sem evento. Um outbox transacional é o próximo passo se for necessária garantia de entrega.
+
 ## Limites entre serviços
 
-Cada serviço controla seu próprio banco e migrações. O `transaction-service` guarda o ID da conta e do proprietário confirmado pelo `account-service`, sem chave estrangeira entre bancos ou acesso direto ao banco de contas. A comunicação síncrona é usada apenas para autenticar a requisição e confirmar o acesso à conta. Eventos via RabbitMQ ficam para necessidades assíncronas futuras, como notificações, sem introduzir mensageria agora.
+Cada serviço controla seu próprio banco e migrações. O `transaction-service` guarda o ID da conta e do proprietário confirmado pelo `account-service`, sem chave estrangeira entre bancos ou acesso direto ao banco de contas. A comunicação síncrona é usada apenas para autenticar a requisição e confirmar o acesso à conta. Eventos de transação seguem pelo RabbitMQ para o `notification-service`, sem acesso ao banco de lançamentos pelo consumidor.
+
+### Transferências entre contas
+
+`POST /transfers` recebe `{"sourceAccountId":"<uuid>","destinationAccountId":"<uuid>","amount":300.00,"description":"Reserva","occurredAt":"2024-05-03T12:30:00Z"}`. A data é opcional na criação. As duas contas devem pertencer ao usuário, ser diferentes e usar a mesma moeda; o valor precisa ser positivo. `GET /transfers` lista com `page` e `size`, `GET /transfers/{id}` consulta, `PUT /transfers/{id}` altera todos os campos (incluindo `occurredAt`) e `DELETE /transfers/{id}` exclui a transferência.
+
+Cada transferência cria uma despesa na origem e uma receita no destino, ambas com `transferId` e sem categoria. As duas movimentações e a transferência são gravadas na mesma transação de banco; uma restrição diferida do PostgreSQL verifica que ambas correspondem à operação. O saldo das contas inclui essas movimentações. `PUT` e `DELETE` de uma perna por `/transactions/{id}` retornam `409`; use `/transfers/{id}` para manter os dois lados sincronizados. Ao calcular receitas e despesas reais em relatórios, filtre `transfer_id IS NULL`.
 
 Os pacotes continuam pequenos e organizados por responsabilidade dentro de cada serviço. Regras ficam nos serviços, SQL nos repositórios e HTTP nos controllers. A configuração inclui Web, JDBC, PostgreSQL, Flyway, Actuator e testes, sem ORM. A senha é armazenada como hash BCrypt. Este fluxo ainda não inclui logout, renovação de sessão ou limitação de tentativas de login.
 

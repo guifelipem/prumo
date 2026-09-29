@@ -78,6 +78,9 @@ services:
       AUTH_BASE_URL: http://auth-service:8081
       ACCOUNT_BASE_URL: http://account-service:8082
       INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:?Defina INTERNAL_SERVICE_KEY no arquivo .env}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USERNAME: prumo
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:?Defina RABBITMQ_PASSWORD no arquivo .env}
     ports:
       - "127.0.0.1:8083:8083"
     depends_on:
@@ -85,12 +88,40 @@ services:
         condition: service_healthy
       account-service:
         condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8083/actuator/health"]
       interval: 10s
       timeout: 3s
       retries: 10
       start_period: 30s
+
+  notification-service:
+    build: ./notification-service
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USERNAME: prumo
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:?Defina RABBITMQ_PASSWORD no arquivo .env}
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: prumo
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?Defina RABBITMQ_PASSWORD no arquivo .env}
+    ports:
+      - "127.0.0.1:5672:5672"
+      - "127.0.0.1:15672:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
 
   auth-db:
     image: postgres:17
@@ -147,3 +178,4 @@ volumes:
   auth-db-data:
   account-db-data:
   transaction-db-data:
+  rabbitmq-data:

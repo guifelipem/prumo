@@ -5,6 +5,11 @@ spring:
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:prumo_transaction}
     username: ${DB_USERNAME:}
     password: ${DB_PASSWORD:}
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:prumo}
+    password: ${RABBITMQ_PASSWORD:prumo}
 
 server:
   port: ${SERVER_PORT:8083}

@@ -1,0 +1,13 @@
+spring:
+  application:
+    name: notification-service
+  main:
+    web-application-type: none
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:prumo}
+    password: ${RABBITMQ_PASSWORD:prumo}
+    listener:
+      simple:
+        default-requeue-rejected: false

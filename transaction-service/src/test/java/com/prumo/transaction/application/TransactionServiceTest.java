@@ -10,6 +10,7 @@ import com.prumo.transaction.domain.Transaction;
 import com.prumo.transaction.domain.TransactionType;
 import com.prumo.transaction.integration.AccountClient;
 import com.prumo.transaction.integration.IdentityClient;
+import com.prumo.transaction.integration.TransactionEventPublisher;
 import com.prumo.transaction.persistence.TransactionRepository;
 import com.prumo.transaction.persistence.CategoryRepository;
 import java.math.BigDecimal;
@@ -27,7 +28,8 @@ class TransactionServiceTest {
     private final TransactionRepository repository = mock(TransactionRepository.class);
     private final CategoryRepository categories = mock(CategoryRepository.class);
     private final IdentityClient identities = mock(IdentityClient.class);
-    private final TransactionService service = new TransactionService(accounts, repository, categories, identities);
+    private final TransactionEventPublisher events = mock(TransactionEventPublisher.class);
+    private final TransactionService service = new TransactionService(accounts, repository, categories, identities, events);
 
     @Test
     void recordsTransactionOnlyForAccountVisibleToToken() {
@@ -42,6 +44,8 @@ class TransactionServiceTest {
         assertEquals("Mercado", transaction.description());
         verify(accounts).requireOwner(accountId, "Bearer token");
         verify(repository).insert(transaction, ownerId);
+        verify(events).publish(org.mockito.ArgumentMatchers.argThat(event ->
+                event.eventType().equals("TransactionCreated") && event.transactionId().equals(transaction.id())));
     }
 
     @Test
@@ -136,6 +140,8 @@ class TransactionServiceTest {
         assertEquals(occurredAt, updated.occurredAt());
         assertEquals("Reembolso", updated.description());
         verify(repository).update(ownerId, updated);
+        verify(events).publish(org.mockito.ArgumentMatchers.argThat(event ->
+                event.eventType().equals("TransactionUpdated") && event.transaction().equals(updated)));
     }
 
     @Test
@@ -152,8 +158,9 @@ class TransactionServiceTest {
 
         assertEquals(HttpStatus.NOT_FOUND, update.getStatusCode());
         assertEquals(HttpStatus.NOT_FOUND, delete.getStatusCode());
-        verify(repository).findOwned(ownerId, transactionId);
-        verify(repository).delete(ownerId, transactionId);
+        verify(repository, org.mockito.Mockito.times(2)).findOwned(ownerId, transactionId);
+        org.mockito.Mockito.verify(repository, org.mockito.Mockito.never()).delete(ownerId, transactionId);
+        verifyNoInteractions(events);
     }
 
     @Test
@@ -172,5 +179,21 @@ class TransactionServiceTest {
         assertEquals(HttpStatus.NOT_FOUND, error.getStatusCode());
         org.mockito.Mockito.verify(repository, org.mockito.Mockito.never())
                 .update(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void publishesDeletedTransactionAfterRemoval() {
+        UUID ownerId = UUID.randomUUID();
+        UUID id = UUID.randomUUID();
+        Transaction current = new Transaction(id, UUID.randomUUID(), TransactionType.EXPENSE,
+                new BigDecimal("12.00"), "Café", Instant.now(), null, Instant.now());
+        when(identities.requireUser("Bearer token")).thenReturn(ownerId);
+        when(repository.findOwned(ownerId, id)).thenReturn(Optional.of(current));
+        when(repository.delete(ownerId, id)).thenReturn(1);
+
+        service.delete("Bearer token", id);
+
+        verify(events).publish(org.mockito.ArgumentMatchers.argThat(event ->
+                event.eventType().equals("TransactionDeleted") && event.transaction().equals(current)));
     }
 }
