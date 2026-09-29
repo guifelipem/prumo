@@ -11,6 +11,7 @@ import com.prumo.transaction.domain.Transaction;
 import com.prumo.transaction.domain.TransactionType;
 import com.prumo.transaction.integration.AccountClient;
 import com.prumo.transaction.integration.IdentityClient;
+import com.prumo.transaction.integration.OutboxWorker;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
@@ -21,6 +22,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -39,8 +41,10 @@ class TransactionPostgresIntegrationTest {
     @Autowired TransactionService service;
     @Autowired TransferService transferService;
     @Autowired JdbcTemplate jdbc;
+    @Autowired TransactionTemplate transactionTemplate;
     @MockitoBean AccountClient accounts;
     @MockitoBean IdentityClient identities;
+    @MockitoBean OutboxWorker outboxWorker;
 
     final UUID owner = UUID.randomUUID();
     final UUID other = UUID.randomUUID();
@@ -48,11 +52,29 @@ class TransactionPostgresIntegrationTest {
 
     @BeforeEach
     void clean() {
+        jdbc.update("DELETE FROM outbox_events");
         jdbc.update("DELETE FROM transactions");
         jdbc.update("DELETE FROM transfers");
         jdbc.update("DELETE FROM categories");
         when(accounts.requireOwner(account, "Bearer owner")).thenReturn(owner);
         when(identities.requireUser("Bearer owner")).thenReturn(owner);
+    }
+
+    @Test
+    void transactionAndEventCommitOrRollbackTogether() {
+        var created = service.create("Bearer owner", account, TransactionType.EXPENSE,
+                new BigDecimal("12.00"), "Compra", null, null);
+        assertEquals(1, jdbc.queryForObject(
+                "SELECT count(*) FROM outbox_events WHERE payload ->> 'transactionId' = ?",
+                Integer.class, created.id().toString()));
+
+        assertThrows(IllegalStateException.class, () -> transactionTemplate.execute(status -> {
+            service.create("Bearer owner", account, TransactionType.EXPENSE,
+                    new BigDecimal("9.00"), "Revertida", null, null);
+            throw new IllegalStateException("rollback");
+        }));
+        assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM transactions", Integer.class));
+        assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM outbox_events", Integer.class));
     }
 
     @Test
@@ -74,14 +96,20 @@ class TransactionPostgresIntegrationTest {
         assertEquals(0, service.balance("Bearer owner", destination).compareTo(new BigDecimal("800.00")));
         assertEquals(2, jdbc.queryForObject("SELECT count(*) FROM transactions WHERE transfer_id = ?",
                 Integer.class, transfer.id()));
+        assertEquals(2, jdbc.queryForObject("SELECT count(*) FROM outbox_events WHERE payload -> 'transaction' ->> 'transferId' = ? AND event_type = 'TransactionCreated'",
+                Integer.class, transfer.id().toString()));
         assertThrows(DataIntegrityViolationException.class, () -> jdbc.update(
                 "DELETE FROM transactions WHERE transfer_id = ? AND type = 'EXPENSE'", transfer.id()));
 
         transferService.update("Bearer owner", transfer.id(), account, destination,
                 new BigDecimal("200.00"), "Corrigida", Instant.now());
+        assertEquals(2, jdbc.queryForObject("SELECT count(*) FROM outbox_events WHERE payload -> 'transaction' ->> 'transferId' = ? AND event_type = 'TransactionUpdated'",
+                Integer.class, transfer.id().toString()));
         assertEquals(0, service.balance("Bearer owner", account).compareTo(new BigDecimal("800.00")));
         assertEquals(0, service.balance("Bearer owner", destination).compareTo(new BigDecimal("700.00")));
         transferService.delete("Bearer owner", transfer.id());
+        assertEquals(2, jdbc.queryForObject("SELECT count(*) FROM outbox_events WHERE payload -> 'transaction' ->> 'transferId' = ? AND event_type = 'TransactionDeleted'",
+                Integer.class, transfer.id().toString()));
         assertEquals(0, service.balance("Bearer owner", account).compareTo(new BigDecimal("1000.00")));
         assertEquals(0, service.balance("Bearer owner", destination).compareTo(new BigDecimal("500.00")));
     }

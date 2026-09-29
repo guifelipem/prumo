@@ -13,6 +13,7 @@ import com.prumo.transaction.integration.AccountClient;
 import com.prumo.transaction.integration.IdentityClient;
 import com.prumo.transaction.persistence.TransactionRepository;
 import com.prumo.transaction.persistence.TransferRepository;
+import com.prumo.transaction.persistence.OutboxRepository;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Optional;
@@ -26,7 +27,8 @@ class TransferServiceTest {
     private final IdentityClient identities = mock(IdentityClient.class);
     private final TransactionRepository transactions = mock(TransactionRepository.class);
     private final TransferRepository transfers = mock(TransferRepository.class);
-    private final TransferService service = new TransferService(accounts, identities, transactions, transfers);
+    private final OutboxRepository events = mock(OutboxRepository.class);
+    private final TransferService service = new TransferService(accounts, identities, transactions, transfers, events);
     private final UUID owner = UUID.randomUUID();
     private final UUID source = UUID.randomUUID();
     private final UUID destination = UUID.randomUUID();

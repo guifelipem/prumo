@@ -5,7 +5,7 @@ import com.prumo.transaction.domain.TransactionType;
 import com.prumo.transaction.integration.AccountClient;
 import com.prumo.transaction.integration.IdentityClient;
 import com.prumo.transaction.integration.TransactionEvent;
-import com.prumo.transaction.integration.TransactionEventPublisher;
+import com.prumo.transaction.persistence.OutboxRepository;
 import com.prumo.transaction.persistence.TransactionRepository;
 import com.prumo.transaction.persistence.CategoryRepository;
 import org.springframework.http.HttpStatus;
@@ -15,6 +15,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class TransactionService {
@@ -23,11 +24,11 @@ public class TransactionService {
     private final TransactionRepository repository;
     private final CategoryRepository categories;
     private final IdentityClient identities;
-    private final TransactionEventPublisher events;
+    private final OutboxRepository events;
 
     public TransactionService(AccountClient accounts, TransactionRepository repository,
                               CategoryRepository categories, IdentityClient identities,
-                              TransactionEventPublisher events) {
+                              OutboxRepository events) {
         this.accounts = accounts;
         this.repository = repository;
         this.categories = categories;
@@ -35,6 +36,7 @@ public class TransactionService {
         this.events = events;
     }
 
+    @Transactional
     public Transaction create(String authorization, UUID accountId, TransactionType type,
                               BigDecimal amount, String description, Instant occurredAt, UUID categoryId) {
         UUID ownerId = accounts.requireOwner(accountId, authorization);
@@ -45,7 +47,7 @@ public class TransactionService {
         Transaction transaction = new Transaction(UUID.randomUUID(), accountId, type,
                 amount, description.trim(), occurredAt == null ? createdAt : occurredAt, categoryId, createdAt);
         repository.insert(transaction, ownerId);
-        events.publish(TransactionEvent.of("TransactionCreated", ownerId, transaction));
+        events.save(TransactionEvent.of("TransactionCreated", ownerId, transaction));
         return transaction;
     }
 
@@ -59,6 +61,7 @@ public class TransactionService {
         return repository.balanceForAccount(ownerId, accountId);
     }
 
+    @Transactional
     public Transaction update(String authorization, UUID id, TransactionType type,
                               BigDecimal amount, String description, Instant occurredAt, UUID categoryId) {
         UUID ownerId = identities.requireUser(authorization);
@@ -75,10 +78,11 @@ public class TransactionService {
         if (repository.update(ownerId, updated) == 0) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND);
         }
-        events.publish(TransactionEvent.of("TransactionUpdated", ownerId, updated));
+        events.save(TransactionEvent.of("TransactionUpdated", ownerId, updated));
         return updated;
     }
 
+    @Transactional
     public void delete(String authorization, UUID id) {
         UUID ownerId = identities.requireUser(authorization);
         Transaction current = repository.findOwned(ownerId, id)
@@ -89,6 +93,6 @@ public class TransactionService {
         if (repository.delete(ownerId, id) == 0) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND);
         }
-        events.publish(TransactionEvent.of("TransactionDeleted", ownerId, current));
+        events.save(TransactionEvent.of("TransactionDeleted", ownerId, current));
     }
 }

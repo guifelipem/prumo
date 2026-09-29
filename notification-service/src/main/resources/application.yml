@@ -11,3 +11,7 @@ spring:
     listener:
       simple:
         default-requeue-rejected: false
+
+logging:
+  pattern:
+    level: "%5p [correlationId=%X{correlationId:-}]"

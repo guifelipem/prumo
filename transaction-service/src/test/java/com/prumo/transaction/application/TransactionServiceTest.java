@@ -10,7 +10,7 @@ import com.prumo.transaction.domain.Transaction;
 import com.prumo.transaction.domain.TransactionType;
 import com.prumo.transaction.integration.AccountClient;
 import com.prumo.transaction.integration.IdentityClient;
-import com.prumo.transaction.integration.TransactionEventPublisher;
+import com.prumo.transaction.persistence.OutboxRepository;
 import com.prumo.transaction.persistence.TransactionRepository;
 import com.prumo.transaction.persistence.CategoryRepository;
 import java.math.BigDecimal;
@@ -28,7 +28,7 @@ class TransactionServiceTest {
     private final TransactionRepository repository = mock(TransactionRepository.class);
     private final CategoryRepository categories = mock(CategoryRepository.class);
     private final IdentityClient identities = mock(IdentityClient.class);
-    private final TransactionEventPublisher events = mock(TransactionEventPublisher.class);
+    private final OutboxRepository events = mock(OutboxRepository.class);
     private final TransactionService service = new TransactionService(accounts, repository, categories, identities, events);
 
     @Test
@@ -44,7 +44,7 @@ class TransactionServiceTest {
         assertEquals("Mercado", transaction.description());
         verify(accounts).requireOwner(accountId, "Bearer token");
         verify(repository).insert(transaction, ownerId);
-        verify(events).publish(org.mockito.ArgumentMatchers.argThat(event ->
+        verify(events).save(org.mockito.ArgumentMatchers.argThat(event ->
                 event.eventType().equals("TransactionCreated") && event.transactionId().equals(transaction.id())));
     }
 
@@ -140,7 +140,7 @@ class TransactionServiceTest {
         assertEquals(occurredAt, updated.occurredAt());
         assertEquals("Reembolso", updated.description());
         verify(repository).update(ownerId, updated);
-        verify(events).publish(org.mockito.ArgumentMatchers.argThat(event ->
+        verify(events).save(org.mockito.ArgumentMatchers.argThat(event ->
                 event.eventType().equals("TransactionUpdated") && event.transaction().equals(updated)));
     }
 
@@ -193,7 +193,7 @@ class TransactionServiceTest {
 
         service.delete("Bearer token", id);
 
-        verify(events).publish(org.mockito.ArgumentMatchers.argThat(event ->
+        verify(events).save(org.mockito.ArgumentMatchers.argThat(event ->
                 event.eventType().equals("TransactionDeleted") && event.transaction().equals(current)));
     }
 }

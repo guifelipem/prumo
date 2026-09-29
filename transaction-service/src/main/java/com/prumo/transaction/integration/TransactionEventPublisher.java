@@ -13,6 +13,10 @@ public class TransactionEventPublisher {
     }
 
     public void publish(TransactionEvent event) {
-        rabbitTemplate.convertAndSend(EXCHANGE, event.eventType(), event);
+        rabbitTemplate.invoke(operations -> {
+            operations.convertAndSend(EXCHANGE, event.eventType(), event);
+            operations.waitForConfirmsOrDie(10_000);
+            return null;
+        });
     }
 }
