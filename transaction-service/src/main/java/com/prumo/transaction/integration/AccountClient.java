@@ -23,6 +23,10 @@ public class AccountClient {
     }
 
     public UUID requireOwner(UUID accountId, String authorization) {
+        return requireAccount(accountId, authorization).ownerId();
+    }
+
+    public OwnedAccount requireAccount(UUID accountId, String authorization) {
         if (authorization == null || !authorization.startsWith("Bearer ")) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
         }
@@ -33,7 +37,7 @@ public class AccountClient {
             if (account == null || account.ownerId() == null) {
                 throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE);
             }
-            return account.ownerId();
+            return account;
         } catch (HttpClientErrorException.Unauthorized exception) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
         } catch (HttpClientErrorException.NotFound exception) {
@@ -43,6 +47,6 @@ public class AccountClient {
         }
     }
 
-    record OwnedAccount(UUID ownerId) {
+    public record OwnedAccount(UUID ownerId, String currency) {
     }
 }

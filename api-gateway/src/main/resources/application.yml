@@ -26,6 +26,10 @@ spring:
               uri: ${TRANSACTION_BASE_URL:http://localhost:8083}
               predicates:
                 - Path=/categories,/categories/**
+            - id: transfers
+              uri: ${TRANSACTION_BASE_URL:http://localhost:8083}
+              predicates:
+                - Path=/transfers,/transfers/**
           globalcors:
             add-to-simple-url-handler-mapping: true
             cors-configurations:

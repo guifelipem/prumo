@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.when;
 
 import com.prumo.transaction.application.TransactionService;
+import com.prumo.transaction.application.TransferService;
 import com.prumo.transaction.domain.Category;
 import com.prumo.transaction.domain.CategoryType;
 import com.prumo.transaction.domain.Transaction;
@@ -36,6 +37,7 @@ class TransactionPostgresIntegrationTest {
     @Autowired TransactionRepository transactions;
     @Autowired CategoryRepository categories;
     @Autowired TransactionService service;
+    @Autowired TransferService transferService;
     @Autowired JdbcTemplate jdbc;
     @MockitoBean AccountClient accounts;
     @MockitoBean IdentityClient identities;
@@ -47,9 +49,41 @@ class TransactionPostgresIntegrationTest {
     @BeforeEach
     void clean() {
         jdbc.update("DELETE FROM transactions");
+        jdbc.update("DELETE FROM transfers");
         jdbc.update("DELETE FROM categories");
         when(accounts.requireOwner(account, "Bearer owner")).thenReturn(owner);
         when(identities.requireUser("Bearer owner")).thenReturn(owner);
+    }
+
+    @Test
+    void transferChangesBothBalancesAndCannotLoseOneLeg() {
+        UUID destination = UUID.randomUUID();
+        when(accounts.requireAccount(account, "Bearer owner"))
+                .thenReturn(new AccountClient.OwnedAccount(owner, "BRL"));
+        when(accounts.requireAccount(destination, "Bearer owner"))
+                .thenReturn(new AccountClient.OwnedAccount(owner, "BRL"));
+        when(accounts.requireOwner(destination, "Bearer owner")).thenReturn(owner);
+        service.create("Bearer owner", account, TransactionType.INCOME,
+                new BigDecimal("1000.00"), "Inicial", null, null);
+        service.create("Bearer owner", destination, TransactionType.INCOME,
+                new BigDecimal("500.00"), "Inicial", null, null);
+
+        var transfer = transferService.create("Bearer owner", account, destination,
+                new BigDecimal("300.00"), "Entre contas", null);
+        assertEquals(0, service.balance("Bearer owner", account).compareTo(new BigDecimal("700.00")));
+        assertEquals(0, service.balance("Bearer owner", destination).compareTo(new BigDecimal("800.00")));
+        assertEquals(2, jdbc.queryForObject("SELECT count(*) FROM transactions WHERE transfer_id = ?",
+                Integer.class, transfer.id()));
+        assertThrows(DataIntegrityViolationException.class, () -> jdbc.update(
+                "DELETE FROM transactions WHERE transfer_id = ? AND type = 'EXPENSE'", transfer.id()));
+
+        transferService.update("Bearer owner", transfer.id(), account, destination,
+                new BigDecimal("200.00"), "Corrigida", Instant.now());
+        assertEquals(0, service.balance("Bearer owner", account).compareTo(new BigDecimal("800.00")));
+        assertEquals(0, service.balance("Bearer owner", destination).compareTo(new BigDecimal("700.00")));
+        transferService.delete("Bearer owner", transfer.id());
+        assertEquals(0, service.balance("Bearer owner", account).compareTo(new BigDecimal("1000.00")));
+        assertEquals(0, service.balance("Bearer owner", destination).compareTo(new BigDecimal("500.00")));
     }
 
     @Test
